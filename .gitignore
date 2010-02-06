@@ -1,0 +1,4 @@
+tests/
+.pythoscope/
+nbproject/
+*.pyc
