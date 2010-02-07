@@ -1,4 +1,4 @@
-import re
+import types
 from genius.map import Map, MapObject
 
 class Router(object):
@@ -65,6 +65,10 @@ class Router(object):
             GET /witajcie/wszyscy   index
 
         '''
+        assert len(args) == 2, 'it should be two arguments: route name and class'
+        assert isinstance(args[0], types.StringType), 'first argument should be a string'
+        assert isinstance(args[1], types.TypeType), 'secound argument should be a class'
+        
         name, klass = args
         klass_names = dict(self.names)
         klass_names = self.__set_methods(klass_names, **kwargs)
@@ -72,13 +76,7 @@ class Router(object):
         klass_names = self.__set_only(klass_names, **kwargs)
         klass_names = self.__set_hides(klass_names, **kwargs)
 
-        for p in self.__paths(name, klass, klass_names):
-            self.routes.append(p)
-            klass, method_name, request_type, path = p
-            if request_type.upper() == 'GET':
-                self.__get_maptree[path] = MapObject(controller=klass, action=method_name)
-            else:
-                self.__post_maptree[path] = MapObject(controller=klass, action=method_name)
+        self.__add_to_maps(name, klass, klass_names)
 
     def __set_methods(self, route_names, **kwargs):
         '''
@@ -137,6 +135,14 @@ class Router(object):
         except KeyError:
             return dict(route_names)
 
+    def __add_to_maps(self, name, klass, klass_names):
+        '''
+        For all paths like (class, method_name, request_type, path)
+        add to routes and {get|post}_maptree.
+        '''
+        for controller, action, method, path in self.__paths(name, klass, klass_names):
+            self.connect(path, controller=controller, action=action, method=method)
+
     def __paths(self, name, klass, klass_names):
         '''
         Methods is a generator for all paths in routes.
@@ -176,10 +182,52 @@ class Router(object):
         '''
         self.add(*args, **kwargs)
 
+    def connect(self, path, **kwargs):
+        '''
+        Method adds a raw pattern to routes and connects with controller
+        and action.
+        Argument:
+            * path is a path pattern
+            * controller is a reference to class
+            * action is a string of function name in the controller
+            * method is a request type: 'get' or 'post'
+        '''
+        assert isinstance(path, types.StringType), 'pattern should be a string'
+        assert kwargs.has_key('controller'), 'controller argument is required'
+        assert isinstance(kwargs['controller'], types.TypeType), 'controller is not a Controller'
+        assert kwargs.has_key('action'), 'action argument is required'
+        assert isinstance(kwargs['action'], types.StringType), 'action argument is required'
+        
+        if kwargs.has_key('method'):
+            assert isinstance(kwargs['method'], types.StringType), 'method should be a string'
+            method = kwargs['method']
+        else:
+            method = ''
+            
+        controller = kwargs['controller']
+        action = kwargs['action']
+
+        if method:
+            # if method is GET then add to get_maptree
+            if method.upper() == 'GET':
+                self.routes.append((controller, action, 'GET', path))
+                self.__get_maptree[path] = MapObject(controller=controller, action=action)
+            # if method is POST then add to post_maptree
+            if method.upper() == 'POST':
+                self.routes.append((controller, action, 'POST', path))
+                self.__post_maptree[path] = MapObject(controller=controller, action=action)
+        else:
+            # if method is not GET and not POST then add to get_maptree and post_maptree ;)
+            self.connect(path, controller=controller, action=action, method='GET')
+            self.connect(path, controller=controller, action=action, method='POST')
+
     def __str__(self):
         output = ''
         width = max([len(a.__name__) + len(b) for a,b,c,d in self.routes]) + 2
         for klass, method_name, request_type, path in self.routes:
-            output += '{0}{1}{2}\n'.format('{0} {1}'.format(klass.__name__, method_name).ljust(width), request_type.ljust(5), path)
+            output += '{0}{1}{2}\n'.format(
+                '{0} {1}'.format(klass.__name__, method_name).ljust(width),
+                request_type.ljust(5),
+                path)
         return str(output)
         
